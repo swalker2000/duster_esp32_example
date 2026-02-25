@@ -2,9 +2,6 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <WiFi.h>
-#include "esp_wifi.h"
-#include "esp_pm.h"
-#include <esp_task_wdt.h>
 
 #include "Secret.h"
 
