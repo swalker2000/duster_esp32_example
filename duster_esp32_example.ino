@@ -14,7 +14,7 @@ const int  mqtt_port       = PORT;                 // для SSL
 const char mqtt_username[] = MQTT_USERNAME;
 const char mqtt_password[] = MQTT_PASS;
 
-const char deviceId[] = "device123";                // идентификатор устройства
+const char deviceId[] = "device1";                // идентификатор устройства
 
 // ================= ГЛОБАЛЬНЫЕ ОБЪЕКТЫ =================
 WiFiClientSecure net;
@@ -88,6 +88,7 @@ void messageReceived(char* topic, byte* payload, unsigned int length) {
 
   long id = doc["id"];                     // id запроса
   const char* command = doc["command"];    // команда
+  sendResponse(id);                        //сообщаем серверу, что получили сообщение
 
   Serial.print("Extracted command: ");
   Serial.println(command);
@@ -105,33 +106,69 @@ void messageReceived(char* topic, byte* payload, unsigned int length) {
         Serial.println("Error: pinNumber missing or invalid");
       } else {
         pinMode(pinNumber, OUTPUT);
-        digitalWrite(pinNumber, pinValue ? HIGH : LOW);
+        digitalWrite(pinNumber, pinValue);
         Serial.printf("digitalWrite: pin %d set to %s\n", pinNumber, pinValue ? "HIGH" : "LOW");
       }
     }
   }
-  else if (strcmp(command, "pinModeOutput") == 0) {
+  else if (strcmp(command, "blink") == 0) {
     // Получаем объект data
     JsonObject data = doc["data"];
     if (data.isNull()) {
       Serial.println("Error: data field missing for digitalWrite command");
+      sendResponse(id, "COMPLETED_WITH_ERROR");
     } else {
       int pinNumber = data["pinNumber"] | -1;   // если нет поля, будет -1
-      if (pinNumber == -1) {
-        Serial.println("Error: pinNumber missing or invalid");
+      int period = data["period"] | -1;
+      int count = data["count"] | -1;
+      if (pinNumber == -1 || period==-1 || count == -1) {
+        Serial.println("Error: some values missing or invalid");
+        sendResponse(id, "COMPLETED_WITH_ERROR");
       } else {
+        Serial.println("Blink start");
         pinMode(pinNumber, OUTPUT);
-        //digitalWrite(pinNumber, pinValue ? HIGH : LOW);
-        Serial.printf("pinMode: pin %d OUTPUT", pinNumber);
+        for(int i=0; i<count; i++)
+        {
+          digitalWrite(pinNumber, true);
+          delay(period/2);
+          digitalWrite(pinNumber, false);
+          delay(period/2);
+        }
+        Serial.println("Blink stop");
+        sendResponse(id, "COMPLETED");
       }
     }
   }
   // При необходимости можно добавить другие команды
   // else if (strcmp(command, "anotherCommand") == 0) { ... }
 
+
+}
+
+void sendResponse(int messageId, String deliveryStatus)
+{
   // --- Формирование и отправка ответа (всегда содержит только id) ---
   StaticJsonDocument<128> responseDoc;
-  responseDoc["id"] = id;
+  responseDoc["id"] = messageId;
+  responseDoc["deliveryStatus"] = deliveryStatus;
+
+  String responsePayload;
+  serializeJson(responseDoc, responsePayload);
+
+  String responseTopic = "consumer/response/" + String(deviceId);
+  if (client.publish(responseTopic.c_str(), responsePayload.c_str())) {
+    Serial.println("Response sent to " + responseTopic);
+    Serial.println("Response payload: " + responsePayload);
+  } else {
+    Serial.println("Failed to send response");
+  }
+}
+
+void sendResponse(int messageId)
+{
+  // --- Формирование и отправка ответа (всегда содержит только id) ---
+  StaticJsonDocument<128> responseDoc;
+  responseDoc["id"] = messageId;
 
   String responsePayload;
   serializeJson(responseDoc, responsePayload);
